@@ -5,6 +5,7 @@ import pandas as pd
 import numpy as np
 import time
 import ta
+from binance.exceptions import BinanceAPIException, BinanceOrderException
 
 pd.set_option('display.max_rows', None)
 # Set it to None to display all columns in the dataframe
@@ -32,18 +33,18 @@ print(client.get_asset_balance(asset='ADA'))
 print(client.get_asset_balance(asset='BNB'))
 
 # get balances for futures account
-print(client.futures_account_balance())
+#print(client.futures_account_balance())
 
 # get balances for margin account
-# print(client.get_margin_account())
+#print(client.get_margin_account())
 
 
 # get latest price from Binance API
 btc_price = client.get_symbol_ticker(symbol="BTCUSDT")
 # print full output (dictionary)
-print("Last BTC PRICE:")
-print(btc_price)
-print(btc_price["price"])
+#print("Last BTC PRICE:")
+#print(btc_price)
+#print(btc_price["price"])
 
 
 # get historical data table
@@ -94,45 +95,47 @@ class Signals:
 
     def decide(self):
         self.df['trigger'] = np.where(self.gettrigger(), 1, 0)
-        self.df['Buy'] = np.where(
-            (self.df.trigger) &
-            (self.df['%K'].between(20, 80)) &
-            (self.df['%D'].between(20, 80)) &
-            (self.df.rsi > 50) &
-            (self.df.macd > 0),
-            1,
-            0
-        )
+        self.df['Buy'] = np.where((self.df.trigger) &
+    (self.df['%K'].between(20, 80)) & (self.df['%D'].between(20, 80))
+                                   & (self.df.rsi > 50) & (self.df.macd > 0), 1, 0)
 
 
-inst = Signals(df, 5)
-inst.decide()
-
+#inst = Signals(df, 5)
+#inst.decide()
 # take only buy equals True
-df = df[df.Buy == 1]
-print(df)
+#df = df[df.Buy == 1]
+#print(df)
 
 
 def strategy(pair, qty, open_position=False):
     df = getminutedata(pair, '1m', '100')
     applytechnicals(df)
-    inst = Signals(df, 25)
+    inst = Signals(df, 3) #lags very important parameter 2, 3 or 5
     inst.decide()
-    print(f'current Close is' + str(df.Close.iloc[-1]))
+    print(f'current Close is ' + str(df.Close.iloc[-1]))
+
     if df.Buy.iloc[-1]:
-        order = client.create_order(symbol=pair,
-                                    side='BUY',
-                                    type='MARKET',
-                                    quantity=qty)
+        try:
+            order = client.create_order(symbol=pair,
+                                        side='BUY',
+                                        type='MARKET',
+                                        quantity=qty)
+        except BinanceAPIException as e:
+            # error handling goes here
+            print(e)
+        except BinanceOrderException as e:
+            # error handling goes here
+            print(e)
+
         print(order)
         buyprice = float(order['fills'][0]['price'])
         open_position = True
     while open_position:
         time.sleep(0.5)
         df = getminutedata(pair, '1m', '2')
-        print(f'curren Close' + str(df.Close.iloc[-1]))
-        print(f'curren Target' + str(buyprice * 1.005 ))
-        print(f'current Stop is' + str (buyprice * 0.998))
+        print(f'current Close ' + str(df.Close.iloc[-1]))
+        print(f'current Target ' + str(buyprice * 1.005))
+        print(f'current Stop is ' + str(buyprice * 0.998))
         if df.Close[-1] <= buyprice * 0.995 or df.Close[-1] >= 1.005 * buyprice:
             order = client.create_order(symbol=pair,
                                         side='SELL',
@@ -141,4 +144,8 @@ def strategy(pair, qty, open_position=False):
             print(order)
             break
 
-strategy('ADAUST',50)
+
+# Main loop
+while True:
+    strategy('ADAUSDT', 4)
+    time.sleep(0.5)
