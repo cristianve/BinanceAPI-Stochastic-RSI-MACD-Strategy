@@ -122,7 +122,7 @@ def strategy(pair, qty, open_position=False):
     if df.Buy.iloc[-1]:
         order = client.create_order(symbol=pair,
                                     side='BUY',
-                                    type='MARET',
+                                    type='MARKET',
                                     quantity=qty)
         print(order)
         buyprice = float(order['fills'][0]['price'])
@@ -136,7 +136,7 @@ def strategy(pair, qty, open_position=False):
         if df.Close[-1] <= buyprice * 0.995 or df.Close[-1] >= 1.005 * buyprice:
             order = client.create_order(symbol=pair,
                                         side='SELL',
-                                        type='MARET',
+                                        type='MARKET',
                                         quantity=qty)
             print(order)
             break
