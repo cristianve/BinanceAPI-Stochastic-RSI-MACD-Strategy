@@ -18,7 +18,7 @@ pd.set_option('display.width', None)
 api_key = os.environ.get('binance_api')
 api_secret = os.environ.get('binance_secret')
 
-client = Client(api_key, api_secret)
+client = Client(api_key, api_secret, {"timeout": 20})
 
 # client.API_URL = 'https://testnet.binance.vision/api'
 
@@ -89,7 +89,7 @@ class Signals:
     def gettrigger(self):
         dfx = pd.DataFrame()
         for i in range(self.lags + 1):
-            mask = (self.df['%K'].shift(i) < 20) % (self.df['%D'].shift(i) < 20)
+            mask = (self.df['%K'].shift(i) < 20) & (self.df['%D'].shift(i) < 20)
             dfx = dfx.append(mask, ignore_index=True)
         return dfx.sum(axis=0)
 
@@ -110,7 +110,7 @@ class Signals:
 def strategy(pair, qty, open_position=False):
     df = getminutedata(pair, '1m', '100')
     applytechnicals(df)
-    inst = Signals(df, 3) #lags very important parameter 2, 3 or 5
+    inst = Signals(df, 5) #lags very important parameter 2, 3 or 5
     inst.decide()
     print(f'current Close is ' + str(df.Close.iloc[-1]))
 
@@ -135,7 +135,7 @@ def strategy(pair, qty, open_position=False):
         df = getminutedata(pair, '1m', '2')
         print(f'current Close ' + str(df.Close.iloc[-1]))
         print(f'current Target ' + str(buyprice * 1.005))
-        print(f'current Stop is ' + str(buyprice * 0.998))
+        print(f'current Stop is ' + str(buyprice * 0.995))
         if df.Close[-1] <= buyprice * 0.995 or df.Close[-1] >= 1.005 * buyprice:
             order = client.create_order(symbol=pair,
                                         side='SELL',
@@ -147,5 +147,5 @@ def strategy(pair, qty, open_position=False):
 
 # Main loop
 while True:
-    strategy('ADAUSDT', 4)
+    strategy('ADAUSDT', 8)
     time.sleep(0.5)
