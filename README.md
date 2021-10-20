@@ -1,6 +1,10 @@
 # Binance API 🎮
-Try to integrate with Binance API to try simple action like sell/buy via python (PyCharm IDE).
 
+# Objectives
+
+1- Try to integrate with Binance API to try simple action like sell/buy via python (PyCharm IDE).
+
+2- Make some simple strategy and run with real funds.
 
 # Python install
 
@@ -26,6 +30,10 @@ Triggering condition: in the last 'n' time steps %K and %D have to cross below 2
 ## Selling conditions
 * Stop loss-> 99.5% of buying price
 * Target profit -> 1.005 % of buying price
+
+# Accuracy
+
+//TODO try to calculate % of accuracy if we execute this strategy along time
 
 
 ## Result 🔍:
