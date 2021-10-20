@@ -120,6 +120,10 @@ def strategy(pair, qty, open_position=False):
                                         side='BUY',
                                         type='MARKET',
                                         quantity=qty)
+            print(order)
+            buyprice = float(order['fills'][0]['price'])
+            open_position = True
+
         except BinanceAPIException as e:
             # error handling goes here
             print(e)
@@ -127,9 +131,7 @@ def strategy(pair, qty, open_position=False):
             # error handling goes here
             print(e)
 
-        print(order)
-        buyprice = float(order['fills'][0]['price'])
-        open_position = True
+
     while open_position:
         time.sleep(0.5)
         df = getminutedata(pair, '1m', '2')
