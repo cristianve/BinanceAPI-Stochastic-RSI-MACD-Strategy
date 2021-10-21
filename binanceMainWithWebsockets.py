@@ -1,72 +1,49 @@
 import asyncio
 import os
 
-#python -m pip install python-binance
-
-
 from binance import BinanceSocketManager
 from binance.client import Client
 import pandas as pd
 import numpy as np
 import time
+import datetime
 import ta
 from binance.exceptions import BinanceAPIException, BinanceOrderException
 
+# Dataframe display options
 pd.set_option('display.max_rows', None)
-# Set it to None to display all columns in the dataframe
 pd.set_option('display.max_columns', None)
-
-# Width of the display in characters. If set to None and pandas will correctly auto-detect the width.
 pd.set_option('display.width', None)
 
-# init
+# Init binance API and websocket
 api_key = os.environ.get('binance_api')
 api_secret = os.environ.get('binance_secret')
-
 client = Client(api_key, api_secret, {"timeout": 20})
 bsm = BinanceSocketManager(client)
-# client.API_URL = 'https://testnet.binance.vision/api'
 
 
-################ USER INFO ################
-
-# get balances for all assets & some account information
-print(client.get_account())
-
-# get balance for a specific asset only (BTC)
-print(client.get_asset_balance(asset='ADA'))
-print(client.get_asset_balance(asset='BNB'))
-
-# get balances for futures account
-#print(client.futures_account_balance())
-
-# get balances for margin account
-#print(client.get_margin_account())
+# Transform historical data from API to DataFrame
+def getDataFrameFromAPI(symbol, interval, lookback):
+    df = pd.DataFrame(client.get_historical_klines(symbol, interval, lookback + 'min ago UTC'))
+    df = df.iloc[:, :6]
+    df.columns = ['Time', 'Open', 'High', 'Low', 'Close', 'Volume']
+    df = df.set_index('Time')
+    df.index = pd.to_datetime(df.index, unit='ms')
+    df = df.astype(float)
+    return df
 
 
-# get latest price from Binance API
-btc_price = client.get_symbol_ticker(symbol="BTCUSDT")
-# print full output (dictionary)
-#print("Last BTC PRICE:")
-#print(btc_price)
-#print(btc_price["price"])
+# Transform historical data from Websocket to DataFrame
+def getDataFrameFromWebsocket(msg):
+    df = pd.DataFrame([msg])
+    df = df.loc[:, ['s', 'E', 'p']]
+    df.columns = ['symbol', 'Time', 'Price']
+    df.Price = df.Price.astype(float)
+    df.Time = pd.to_datetime(df.Time, unit='ms')
+    return df
 
 
-# get historical data table
-def getminutedata(symbol, interval, lookback):
-    frame = pd.DataFrame(client.get_historical_klines(symbol, interval, lookback + 'min ago UTC'))
-    frame = frame.iloc[:, :6]
-    frame.columns = ['Time', 'Open', 'High', 'Low', 'Close', 'Volume']
-    frame = frame.set_index('Time')
-    frame.index = pd.to_datetime(frame.index, unit='ms')
-    frame = frame.astype(float)
-    return frame
-
-
-# get BTC USDT interval 1 minute 100 times
-df = getminutedata('ADAUSDT', '1m', '100')
-
-
+# Add to DataFrame all technics columns
 def applytechnicals(df):
     # Stochastic values
     df['%K'] = ta.momentum.stoch(df.High, df.Low, df.Close, window=14, smooth_window=3)
@@ -78,12 +55,6 @@ def applytechnicals(df):
     # Moving average convergence/divergence
     df['macd'] = ta.trend.macd_diff(df.Close)
     df.dropna(inplace=True)
-
-
-applytechnicals(df)
-
-
-# print(df)
 
 
 class Signals:
@@ -100,35 +71,33 @@ class Signals:
 
     def decide(self):
         self.df['trigger'] = np.where(self.gettrigger(), 1, 0)
-        self.df['Buy'] = np.where((self.df.trigger) &
-    (self.df['%K'].between(20, 80)) & (self.df['%D'].between(20, 80))
-                                   & (self.df.rsi > 50) & (self.df.macd > 0), 1, 0)
+        self.df['Buy'] = np.where(self.df.trigger &
+                                  (self.df['%K'].between(20, 80)) & (self.df['%D'].between(20, 80))
+                                  & (self.df.rsi > 50) & (self.df.macd > 0), 1, 0)
 
 
-#inst = Signals(df, 5)
-#inst.decide()
-# take only buy equals True
-#df = df[df.Buy == 1]
-#print(df)
+async def strategy(pair, qty, SL=0.985, TP=1.02, open_position=False):
+    try:
+        # Get and transport data from API
+        df = getDataFrameFromAPI(pair, '1m', '100')
+    except:
+        # Try to reconnect after 1 minute
+        # delay
+        time.sleep(61)
+        # Get and transport data from API
+        df = getDataFrameFromAPI(pair, '1m', '100')
 
-def createframe(msg):
-    df = pd.DataFrame([msg])
-    df = df.loc[:, ['s', 'E', 'p']]
-    df.columns = ['symbol', 'Time', 'Price']
-    df.Price = df.Price.astype(float)
-    df.Time = pd.to_datetime(df.Time, unit='ms')
-    return df
-
-
-
-async def strategy(pair, qty, open_position=False):
-    df = getminutedata(pair, '1m', '100')
+    # Apply RSI MCAD K-D Technics
     applytechnicals(df)
-    inst = Signals(df, 5) #lags very important parameter 2, 3 or 5
-    inst.decide()
-    print(f'current Close is ' + str(df.Close.iloc[-1]))
 
-    socket = bsm.trade_socket(pair)
+    # Update decision
+    inst = Signals(df, 5)  # lags very important parameter 2, 3 or 5
+    inst.decide()
+
+    print(f'[NOT_OPEN_POSITION] Current {pair} Close is ' + str(df.Close.iloc[-1]))
+    time.sleep(0.5)
+
+    # Condition to buy
     if df.Buy.iloc[-1]:
         try:
             order = client.create_order(symbol=pair,
@@ -146,17 +115,33 @@ async def strategy(pair, qty, open_position=False):
             # error handling goes here
             print(e)
 
-
     while open_position:
+        # Receive and transform message from socket
+        socket = bsm.trade_socket(pair)
         await socket.__aenter__()
         msg = await socket.recv()
-        df = createframe(msg)
-        #df = getminutedata(pair, '1m', '2')
+        df = getDataFrameFromWebsocket(msg)
 
-        print(f'current Close ' + str(df.Close.iloc[-1]))
-        print(f'current Target ' + str(buyprice * 1.005))
-        print(f'current Stop is ' + str(buyprice * 0.995))
-        if df.Close[-1] <= buyprice * 0.995 or df.Close[-1] >= 1.005 * buyprice:
+        # SL= 0.985 - 0.015 => 1,5%
+        # TP= 1.02  - 0.02 => 2%
+        # Take profit sell Price calculation
+
+        fee = 0.075
+        buyprice_with_fee = buyprice + (buyprice * fee)
+
+        final_tp_sell_price = buyprice_with_fee * TP
+        final_tp_sell_price = final_tp_sell_price - (final_tp_sell_price * fee)
+
+        # Stop lost sell Price calculation
+        final_sl_sell_price = buyprice_with_fee * SL
+        final_sl_sell_price = final_sl_sell_price + (final_sl_sell_price * fee)
+
+        print(f'[OPEN_POSITION] Current {pair} Close is ' + str(df.Price.iloc[-1]))
+        print(f'[OPEN_POSITION] Target - Take profit {pair} is ' + str(final_tp_sell_price))
+        print(f'[OPEN_POSITION] Target - Stop loss {pair} is ' + str(final_sl_sell_price))
+
+        # Condition to sell
+        if df.Price.iloc[-1] <= final_sl_sell_price or df.Price.iloc[-1] >= final_tp_sell_price:
             order = client.create_order(symbol=pair,
                                         side='SELL',
                                         type='MARKET',
@@ -167,12 +152,9 @@ async def strategy(pair, qty, open_position=False):
 
 async def main():
     while True:
-            await strategy('ADAUSDT', 8)
+        await strategy('ADAUSDT', 8)
 
 
-if __name__ ==  "__main__":
+if __name__ == "__main__":
     loop = asyncio.get_event_loop()
     loop.run_until_complete(main())
-
-
-
