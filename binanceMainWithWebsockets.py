@@ -145,7 +145,7 @@ async def strategy(pair, qty, SL=0.985, TP=1.02, open_position=False):
         final_sl_sell_price = buyprice_minus_fee * SL
         final_sl_sell_price = final_sl_sell_price - (final_sl_sell_price * fee)
 
-        print(f'[OPEN_POSITION] Current {pair} Close is ' + str(df.Price.iloc[-1]))
+        print(f'[OPEN_POSITION] Current {pair} Close is ' + str(df.Price.iloc[-1])) #'DataFrame' object has no attribute 'Price'
         print(f'[OPEN_POSITION] Target - Take profit {pair} is ' + str(final_tp_sell_price))
         print(f'[OPEN_POSITION] Target - Stop loss {pair} is ' + str(final_sl_sell_price))
 
