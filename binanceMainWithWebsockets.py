@@ -10,8 +10,6 @@ from binance.client import Client
 from binance.exceptions import BinanceAPIException, BinanceOrderException
 
 
-
-
 # global winrate variables
 win = 0
 lost = 0
@@ -181,5 +179,6 @@ async def main_loop(symbol):
 
 
 if __name__ == "__main__":
+    print(client)
     loop = asyncio.get_event_loop()
     loop.run_until_complete(main())

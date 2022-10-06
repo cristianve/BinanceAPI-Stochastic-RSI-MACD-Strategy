@@ -1,3 +1,6 @@
+import warnings
+warnings.simplefilter(action='ignore', category=FutureWarning)
+
 import pandas as pd
 import os
 import numpy as np
@@ -6,6 +9,11 @@ import ta
 from binance import BinanceSocketManager
 from binance.client import Client
 from binance.exceptions import BinanceAPIException, BinanceOrderException
+# connect to google 
+
+from pytrends.request import TrendReq
+
+pytrends = TrendReq(hl='en-US', tz=360) 
 
 # Dataframe display options
 pd.set_option('display.max_rows', None)
@@ -67,8 +75,17 @@ class Signals:
 
 
 def main():
-    df = getDataFrameFromAPI('ADAUSDT', Client.KLINE_INTERVAL_5MINUTE, '1 month ago UTC')
 
+
+
+    kw_list = ["Blockchain"]
+    result = pytrends.trending_searches(pn='united_states')
+    df = pd.DataFrame(result)
+    #pytrends.get_historical_interest(kw_list, year_start=2021, month_start=9, day_start=1, hour_start=0, year_end=2021, month_end=9, day_end=30, hour_end=0, cat=0, sleep=0)
+    print(df)
+    
+    df = getDataFrameFromAPI('ADAUSDT', Client.KLINE_INTERVAL_5MINUTE, '3 month ago UTC')
+    print('Calculating total opened trades - FROM 1 month ago interval 5 minute:\n')
     # Apply RSI MCAD K-D Technics
     applytechnicals(df)
 
@@ -82,9 +99,15 @@ def main():
     Selling_date = []
 
     win = 0
+    totalWin=0
+    totalLost=0
     lost = 0
 
-    amount = 100
+    amount = 1000
+
+    globalAmount = 1000
+    unitaryBuyPrice = 1
+  
 
     for i in range(len(df)):
         if df.Buy.iloc[i]:
@@ -108,30 +131,45 @@ def main():
                 final_tp_sell_price = final_tp_sell_price - (final_tp_sell_price * fee)
 
                 if df.Close.iloc[j] >= final_tp_sell_price:
-                    print('[WIN] -Open position at: ', buyprice,
-                          'Buy Price + fee:', buyprice_plus_fee,
-                          'Final TP price:', final_tp_sell_price)
-
+                    print('[WIN] - Open position at: ', buyprice,'\n',
+                          'Buy Price + fee:', buyprice_plus_fee,'\n',
+                          'Final TP price:', final_tp_sell_price, '\n')
+                    print('Win amount: ', (final_tp_sell_price / buyprice_plus_fee) * unitaryBuyPrice,'\n')
                     Selling_date.append(df.index[j])
                     win = win + 1
+                    totalWin = totalWin + ((final_tp_sell_price / buyprice_plus_fee) * unitaryBuyPrice)
+                    globalAmount = globalAmount - 1
+                    globalAmount = globalAmount + (final_tp_sell_price / buyprice_plus_fee) * unitaryBuyPrice
+
                     open_position = False
                 if df.Close.iloc[j] <= final_sl_sell_price:
-                    print('[LOST] - Open position at: ', buyprice,
-                          'Buy Price - fee:', buyprice_minus_fee,
-                          'SL price:', final_sl_sell_price)
+                    print('[LOST] - Open position at: ', buyprice,'\n',
+                          'Buy Price - fee:', buyprice_minus_fee,'\n',
+                          'SL price:', final_sl_sell_price,'\n')
+                    print('Lost amount: ', (final_sl_sell_price / buyprice_plus_fee) * unitaryBuyPrice,'\n')
                     Selling_date.append(df.index[j])
+                    totalLost = totalLost + ((final_sl_sell_price / buyprice_minus_fee) * unitaryBuyPrice)
+                    globalAmount = globalAmount - 1
+                    globalAmount = globalAmount - (final_sl_sell_price / buyprice_minus_fee) * unitaryBuyPrice
+         
                     lost = lost + 1
                     open_position = False
                 j = j + 1
 
+    print('~~~~~~~~~~~~~~~')
     print('Wins:', win)
-    print('Lost:', lost)
-    print("Buying:", Buying_date)
-    print("Selling:", Selling_date)
-    print('Winrate', win / (win + lost) * 100)
+    print('Lost:', lost, "\n")
+    print("Buying times:", Buying_date, "\n")
+    print("Selling times:", Selling_date, "\n")
+    print('Winrate', win / (win + lost) * 100, "\n")
+    print('totalWin: ', totalWin, "\n")
+    print('totalLost: ', totalLost, "\n")
+    print('Global amount', globalAmount, "\n")
+
     amount = amount + (win * 0.10)
     amount = amount - (lost * 0.10)
     print(amount)
+    print('~~~~~~~~~~~~~~~')
 
 if __name__ == "__main__":
     main()
